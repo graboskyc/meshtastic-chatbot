@@ -1,0 +1,6 @@
+pymongo
+dnspython
+meshtastic
+pynws
+asyncio
+aiohttp
