@@ -1,5 +1,6 @@
 import meshtastic
 import meshtastic.serial_interface
+import meshtastic.tcp_interface
 from pubsub import pub
 import time
 import pymongo
@@ -12,17 +13,26 @@ import asyncio
 import aiohttp
 import pynws
 import os
+import wikipedia
 
 # +------------------------------------------------------------
 # | Configuration section
 # +------------------------------------------------------------
-interface = meshtastic.serial_interface.SerialInterface()
+interface = None
+if ("INTERFACE" in os.environ):
+    if(os.environ["INTERFACE"] != ""):
+        interface = meshtastic.tcp_interface.TCPInterface(hostname=os.environ["INTERFACE"])
+    else:
+        interface = meshtastic.serial_interface.SerialInterface()
+else:
+    interface = meshtastic.serial_interface.SerialInterface()
 
 _uri = os.environ["MDBURI"]
 _conn = pymongo.MongoClient(_uri)
 _location = (float(os.environ["LOCLAT"]), float(os.environ["LOCLONG"]))
 _email = os.environ["EMAIL"]
-_firstRun = True
+_firstRun = False
+_watchChan = int(os.environ["CHANIND"])
 
 # +------------------------------------------------------------
 # | Functions to clean the crappy message format
@@ -65,6 +75,10 @@ def strip_raw(data):
 
     return data
 
+def CtoF(degC):
+    degF = (degC * 1.8) + 32
+    return "{:.2f}".format(degF)
+
 # +------------------------------------------------------------
 # | External functions
 # +------------------------------------------------------------
@@ -73,10 +87,35 @@ async def asyncweather():
         nws = pynws.SimpleNWS(*_location, _email, session)
         await nws.set_station()
         await nws.update_observation()
-        print(nws.observation)
+        await nws.update_forecast()
+        #print(nws.observation)
+        #print(nws.forecast[0])
+
+        doc = {}
+        doc["insertTime"] = datetime.datetime.utcnow()
+        doc["weatherObservation"] = nws.observation
+        doc["responseMsg"] = "Current temp is " + str(CtoF(nws.observation["temperature"])) + " and wind is " + str(nws.observation["windSpeed"]) + " and weather is " + str(nws.observation["textDescription"]) +". Today forecasting " +  str(nws.forecast[0]["probabilityOfPrecipitation"]) + " percent chance of precip. It will be "  + nws.forecast[0]["detailedForecast"]
+        _conn["meshtastic"]["outbound"].insert_one(doc)
+
+        ch = interface.localNode.getChannelByChannelIndex(_watchChan)
+        print("SENDING: " + doc["responseMsg"] + " TO: {ch}")
+        interface.sendText(doc["responseMsg"], wantAck=True, channelIndex=_watchChan)
 
 def weather():
     loop.run_until_complete(asyncweather())
+
+def wiki(msg):
+    doc = {}
+    doc["insertTime"] = datetime.datetime.utcnow()
+    doc["responseMsg"] = wikipedia.summary(msg[5:])
+    _conn["meshtastic"]["outbound"].insert_one(doc)
+
+    ch = interface.localNode.getChannelByChannelIndex(_watchChan)
+    print("SENDING: " + doc["responseMsg"] + " TO: {ch}")
+    n=150
+    chunks = [doc["responseMsg"][i:i+n] for i in range(0, len(doc["responseMsg"]), n)]
+    for c in chunks:
+        interface.sendText(c, wantAck=True, channelIndex=_watchChan)
 
 # +------------------------------------------------------------
 # | Message handling
@@ -89,7 +128,13 @@ def onReceive(packet, interface): # called when a packet arrives
     print(doc)
     _conn["meshtastic"]["inbound"].insert_one(doc)
     print("==========================")
-    weather()    
+    
+    if("decoded" in doc):
+        if("text" in doc["decoded"]):
+            if(doc["decoded"]["text"].lower().strip() == "weather"):
+                weather()
+            if(doc["decoded"]["text"].lower().strip().startswith("wiki")):
+                wiki(doc["decoded"]["text"].lower().strip())   
 
 def onConnection(interface, topic=pub.AUTO_TOPIC): # called when we (re)connect to the radio
     # defaults to broadcast, specify a destination ID if you wish

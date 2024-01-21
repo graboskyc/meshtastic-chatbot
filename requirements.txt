@@ -4,3 +4,4 @@ meshtastic
 pynws
 asyncio
 aiohttp
+wikipedia
