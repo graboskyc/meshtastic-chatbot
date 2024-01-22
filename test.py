@@ -14,6 +14,8 @@ import aiohttp
 import pynws
 import os
 import wikipedia
+import requests
+import urllib.parse
 
 # +------------------------------------------------------------
 # | Configuration section
@@ -107,15 +109,37 @@ def weather():
 def wiki(msg):
     doc = {}
     doc["insertTime"] = datetime.datetime.utcnow()
-    doc["responseMsg"] = wikipedia.summary(msg[5:])
+
+    # https://pypi.org/project/wikipedia/
+    article = wikipedia.summary(msg[5:])
+    
+    # https://github.com/patw/sumbot
+    if ("SUMBOTURI" in os.environ):
+        if(os.environ["SUMBOTURI"] != ""):
+            print ("Sumbot do your work...")
+            resp = requests.post(os.environ["SUMBOTURI"]+"/summarize?entity_type=article&input_json="+ urllib.parse.quote(article))
+            text = resp.text
+            print(text)
+            body = json.loads(text)
+            doc["responseMsg"] = body["summary"]
+        else:
+            doc["responseMsg"] = article
+    else:
+        doc["responseMsg"] = article
+
+    
     _conn["meshtastic"]["outbound"].insert_one(doc)
 
     ch = interface.localNode.getChannelByChannelIndex(_watchChan)
     print("SENDING: " + doc["responseMsg"] + " TO: {ch}")
     n=150
     chunks = [doc["responseMsg"][i:i+n] for i in range(0, len(doc["responseMsg"]), n)]
+    i = 1
     for c in chunks:
-        interface.sendText(c, wantAck=True, channelIndex=_watchChan)
+        preamble = "wiki " + str(i)+"/"+str(len(chunks)) + ": "
+        interface.sendText(preamble + c, wantAck=True, channelIndex=_watchChan)
+        #print(c)
+        i=i+1
 
 # +------------------------------------------------------------
 # | Message handling
@@ -159,7 +183,14 @@ def onConnection(interface, topic=pub.AUTO_TOPIC): # called when we (re)connect 
 pub.subscribe(onReceive, "meshtastic.receive")
 pub.subscribe(onConnection, "meshtastic.connection.established")
 loop = asyncio.get_event_loop()
+broadcastWeather = True
 
 while True:
-    time.sleep(1000)
+    if datetime.datetime.now().hour % 4 == 0:
+        if broadcastWeather:
+            weather()
+            broadcastWeather = False
+    else:
+        broadcastWeather = True
+    time.sleep(600)
 interface.close()
