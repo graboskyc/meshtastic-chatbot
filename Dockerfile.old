@@ -1,0 +1,40 @@
+FROM ubuntu:23.10
+ENV CONTAINER_SHELL=bash
+ENV CONTAINER=
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
+
+# basic app installs
+# two steps because i kept getting cache errors without it
+RUN apt-get clean && \
+    apt-get update
+RUN apt-get install -y \
+        python3.11  \
+        openssl \
+        libssl-dev \
+        pkg-config \
+        build-essential
+
+# links
+RUN ln -s /usr/bin/python3.11 /usr/bin/python3 -f
+RUN ln -s /usr/bin/python3.11 /usr/bin/python -f
+
+# install pip
+RUN wget -O get-pip.py https://bootstrap.pypa.io/get-pip.py
+RUN python3 get-pip.py
+
+RUN mkdir /opt/meshtasticbot
+COPY ./test.py /opt/meshtasticbot/test.py
+COPY ./requirements.txt /opt/meshtasticbot/requirements.txt
+
+# install pip required packages
+RUN python3 -m pip install -r /opt/meshtasticbot/requirements.txt
+
+RUN cd /opt/meshtasticbot
+WORKDIR /opt/meshtasticbot
+RUN python3 test.py
+ENTRYPOINT ["python3", "test.py"]
+#CMD ["/bin/bash"]
+
+EXPOSE 80

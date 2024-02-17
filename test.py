@@ -23,7 +23,7 @@ import urllib.parse
 interface = None
 if ("INTERFACE" in os.environ):
     if(os.environ["INTERFACE"] != ""):
-        interface = meshtastic.tcp_interface.TCPInterface(hostname=os.environ["INTERFACE"])
+        interface = meshtastic.tcp_interface.TCPInterface(hostname='192.168.2.136')
     else:
         interface = meshtastic.serial_interface.SerialInterface()
 else:

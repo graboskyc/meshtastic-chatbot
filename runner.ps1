@@ -10,4 +10,8 @@ get-content .env | foreach {
     Write-Output "Setting Env Flag for $key"
 }
 
-python3 test.py
+#python3 test.py
+
+docker stop meshtasticbot
+docker rm meshtasticbot
+docker run -t -i -d --name meshtasticbot -e "MDBURI=$env:MDBURI" -e "EMAIL=$env:EMAIL" -e "LOCLAT=$env:LOCLAT" -e "LOCLONG=$env:LOCLONG" -e "CHANIND=$env:CHANIND" -e "INTERFACE=$env:INTERFACE" -e "SUMBOTURI=$env:SUMBOTURI" --restart unless-stopped graboskyc/meshtasticbot:latest
